@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<!-- Gerenciamento de Pedidos - [Pedro Mota Batista] -->
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Pedidos - PIZZA ADMIN</title>
+  <link rel="stylesheet" href="/css/style.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.0/axios.min.js"></script>
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo"><h2>🍕 PIZZA ADMIN</h2><span>painel de gestão</span></div>
+    <nav>
+      <a href="/pages/dashboard.html"><span class="icon">▪</span> Dashboard</a>
+      <a href="/pages/clientes.html"><span class="icon">▪</span> Clientes</a>
+      <a href="/pages/produtos.html"><span class="icon">▪</span> Produtos</a>
+      <a href="/pages/pedidos.html" class="active"><span class="icon">▪</span> Pedidos</a>
+      <a href="/pages/usuarios.html"><span class="icon">▪</span> Usuários</a>
+    </nav>
+    <div class="sidebar-footer">
+      <span id="nomeUsuario"></span>
+      <button class="btn btn-secondary btn-sm" onclick="logout()">Sair</button>
+    </div>
+  </aside>
+  <div class="main-content">
+    <div class="topbar"><h1>Pedidos</h1></div>
+    <div class="page-body">
+      <div id="alerta" class="alert hidden"></div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Lista de Pedidos</h2>
+          <button class="btn btn-primary" onclick="abrirModal()">+ Novo Pedido</button>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Cliente</th><th>Itens</th><th>Total</th><th>Status</th><th>Data/Hora</th><th>Ações</th></tr></thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="modal" class="modal-overlay hidden">
+  <div class="modal">
+    <h2>Novo Pedido</h2>
+    <div class="form-group">
+      <label>Cliente *</label>
+      <select id="clienteId"><option value="">Selecione...</option></select>
+    </div>
+    <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Itens *</div>
+    <div id="itensContainer" class="itens-pedido"></div>
+    <button class="btn btn-secondary btn-sm" onclick="adicionarItem()" style="margin-bottom:16px">+ Item</button>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="fecharModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvar()">Criar Pedido</button>
+    </div>
+  </div>
+</div>
+
+<div id="modalStatus" class="modal-overlay hidden">
+  <div class="modal">
+    <h2>Atualizar Status</h2>
+    <input type="hidden" id="pedidoStatusId"/>
+    <div class="form-group">
+      <label>Status</label>
+      <select id="novoStatus">
+        <option value="pendente">Pendente</option>
+        <option value="preparando">Preparando</option>
+        <option value="saiu_para_entrega">Saiu para Entrega</option>
+        <option value="entregue">Entregue</option>
+        <option value="cancelado">Cancelado</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="fecharModalStatus()">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarStatus()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/utils.js"></script>
+<script>
+  requireAuth();
+  document.getElementById('nomeUsuario').textContent = localStorage.getItem('nomeUsuario') || '';
+  let produtos = [];
+
+  // Carrega clientes e produtos para os selects via Axios - [Pedro Mota Batista]
+  async function carregarSelects() {
+    const [rc, rp] = await Promise.all([
+      axios.get(API + '/clientes', { headers: getHeaders() }),
+      axios.get(API + '/produtos', { headers: getHeaders() }),
+    ]);
+    produtos = rp.data;
+    const sel = document.getElementById('clienteId');
+    sel.innerHTML = '<option value="">Selecione...</option>' + rc.data.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+  }
+
+  // Carrega lista de pedidos via Axios - [Pedro Mota Batista]
+  async function carregar() {
+    const res = await axios.get(API + '/pedidos', { headers: getHeaders() });
+    const lista = res.data;
+    const tbody = document.getElementById('tbody');
+    if (!lista.length) {
+      tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📋</div>Nenhum pedido ainda</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = [...lista].reverse().map(p => `
+      <tr>
+        <td>${p.nomeCliente}</td>
+        <td>${p.itens.map(i => `${i.nome} x${i.quantidade}`).join(', ')}</td>
+        <td>${formatMoeda(p.valorTotal)}</td>
+        <td><span class="badge badge-${p.status}">${p.status.replace(/_/g,' ')}</span></td>
+        <td>${formatData(p.dataHora)}</td>
+        <td style="display:flex;gap:6px">
+          <button class="btn btn-secondary btn-sm" onclick="abrirStatus('${p.id}','${p.status}')">Status</button>
+          <button class="btn btn-danger btn-sm" onclick="remover('${p.id}')">Excluir</button>
+        </td>
+      </tr>`).join('');
+  }
+
+  function adicionarItem() {
+    const div = document.createElement('div');
+    div.className = 'item-row';
+    div.innerHTML = `
+      <select class="produtoSelect" style="flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:6px">
+        <option value="">Produto...</option>
+        ${produtos.map(p => `<option value="${p.id}">${p.nome} — ${formatMoeda(p.preco)}</option>`).join('')}
+      </select>
+      <input type="number" class="qtdInput" min="1" value="1" style="width:60px;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px;border-radius:6px"/>
+      <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()">×</button>`;
+    document.getElementById('itensContainer').appendChild(div);
+  }
+
+  async function abrirModal() {
+    await carregarSelects();
+    document.getElementById('itensContainer').innerHTML = '';
+    adicionarItem();
+    document.getElementById('modal').classList.remove('hidden');
+  }
+
+  function fecharModal() { document.getElementById('modal').classList.add('hidden'); }
+
+  // Cria pedido via Axios - [Pedro Mota Batista]
+  async function salvar() {
+    const clienteId = document.getElementById('clienteId').value;
+    const itens = [];
+    document.querySelectorAll('.item-row').forEach(l => {
+      const pid = l.querySelector('.produtoSelect').value;
+      const qtd = parseInt(l.querySelector('.qtdInput').value) || 1;
+      if (pid) itens.push({ produtoId: pid, quantidade: qtd });
+    });
+    if (!clienteId || !itens.length) return showAlert('Selecione cliente e ao menos um produto.', 'erro');
+    try {
+      await axios.post(API + '/pedidos', { clienteId, itens }, { headers: getHeaders() });
+      showAlert('Pedido criado!'); fecharModal(); carregar();
+    } catch(e) { showAlert(e.response?.data?.erro || 'Erro ao criar pedido', 'erro'); }
+  }
+
+  function abrirStatus(id, statusAtual) {
+    document.getElementById('pedidoStatusId').value = id;
+    document.getElementById('novoStatus').value     = statusAtual;
+    document.getElementById('modalStatus').classList.remove('hidden');
+  }
+  function fecharModalStatus() { document.getElementById('modalStatus').classList.add('hidden'); }
+
+  // Atualiza status do pedido via Axios - [Pedro Mota Batista]
+  async function salvarStatus() {
+    const id     = document.getElementById('pedidoStatusId').value;
+    const status = document.getElementById('novoStatus').value;
+    try {
+      await axios.put(`${API}/pedidos/${id}/status`, { status }, { headers: getHeaders() });
+      showAlert('Status atualizado!'); fecharModalStatus(); carregar();
+    } catch(e) { showAlert(e.response?.data?.erro || 'Erro', 'erro'); }
+  }
+
+  async function remover(id) {
+    if (!confirm('Remover este pedido?')) return;
+    await axios.delete(`${API}/pedidos/${id}`, { headers: getHeaders() });
+    showAlert('Pedido removido!'); carregar();
+  }
+
+  carregar();
+</script>
+</body>
+</html>

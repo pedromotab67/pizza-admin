@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<!-- Dashboard principal - [Pedro Mota Batista] -->
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dashboard - PIZZA ADMIN</title>
+  <link rel="stylesheet" href="/css/style.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.0/axios.min.js"></script>
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo"><h2>🍕 PIZZA ADMIN</h2><span>painel de gestão</span></div>
+    <nav>
+      <a href="/pages/dashboard.html" class="active"><span class="icon">▪</span> Dashboard</a>
+      <a href="/pages/clientes.html"><span class="icon">▪</span> Clientes</a>
+      <a href="/pages/produtos.html"><span class="icon">▪</span> Produtos</a>
+      <a href="/pages/pedidos.html"><span class="icon">▪</span> Pedidos</a>
+      <a href="/pages/usuarios.html"><span class="icon">▪</span> Usuários</a>
+    </nav>
+    <div class="sidebar-footer">
+      <span id="nomeUsuario"></span>
+      <button class="btn btn-secondary btn-sm" onclick="logout()">Sair</button>
+    </div>
+  </aside>
+  <div class="main-content">
+    <div class="topbar">
+      <h1>Dashboard</h1>
+      <a href="/api-docs" target="_blank" class="btn btn-secondary btn-sm">Swagger Docs</a>
+    </div>
+    <div class="page-body">
+      <div class="cards-grid">
+        <div class="stat-card"><div class="stat-icon">👥</div><div class="stat-label">Clientes</div><div class="stat-val" id="totalClientes">—</div></div>
+        <div class="stat-card"><div class="stat-icon">🍕</div><div class="stat-label">Produtos</div><div class="stat-val" id="totalProdutos">—</div></div>
+        <div class="stat-card"><div class="stat-icon">📋</div><div class="stat-label">Pedidos</div><div class="stat-val" id="totalPedidos">—</div></div>
+        <div class="stat-card"><div class="stat-icon">💰</div><div class="stat-label">Faturamento</div><div class="stat-val" id="faturamento">—</div></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h2>Últimos Pedidos</h2></div>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Cliente</th><th>Status</th><th>Total</th><th>Data/Hora</th></tr></thead>
+            <tbody id="tbodyPedidos"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/js/utils.js"></script>
+<script>
+  requireAuth();
+  document.getElementById('nomeUsuario').textContent = localStorage.getItem('nomeUsuario') || '';
+
+  // Carrega dados do dashboard via Axios - [Pedro Mota Batista]
+  async function carregarDashboard() {
+    const cfg = { headers: getHeaders() };
+    const [c, p, ped] = await Promise.all([
+      axios.get(API + '/clientes', cfg),
+      axios.get(API + '/produtos', cfg),
+      axios.get(API + '/pedidos',  cfg),
+    ]);
+    document.getElementById('totalClientes').textContent = c.data.length;
+    document.getElementById('totalProdutos').textContent = p.data.length;
+    document.getElementById('totalPedidos').textContent  = ped.data.length;
+    const fat = ped.data.filter(x => x.status === 'entregue').reduce((s, x) => s + x.valorTotal, 0);
+    document.getElementById('faturamento').textContent = formatMoeda(fat);
+    const tbody = document.getElementById('tbodyPedidos');
+    const ultimos = [...ped.data].reverse().slice(0, 5);
+    if (!ultimos.length) { tbody.innerHTML = '<tr><td colspan="4"><div class="empty-state"><div class="empty-icon">📋</div>Nenhum pedido ainda</div></td></tr>'; return; }
+    tbody.innerHTML = ultimos.map(x => `
+      <tr>
+        <td>${x.nomeCliente}</td>
+        <td><span class="badge badge-${x.status}">${x.status.replace(/_/g,' ')}</span></td>
+        <td>${formatMoeda(x.valorTotal)}</td>
+        <td>${formatData(x.dataHora)}</td>
+      </tr>`).join('');
+  }
+  carregarDashboard();
+</script>
+</body>
+</html>

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<!-- Gerenciamento de Usuarios - [Pedro Mota Batista] -->
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Usuários - PIZZA ADMIN</title>
+  <link rel="stylesheet" href="/css/style.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.0/axios.min.js"></script>
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo"><h2>🍕 PIZZA ADMIN</h2><span>painel de gestão</span></div>
+    <nav>
+      <a href="/pages/dashboard.html"><span class="icon">▪</span> Dashboard</a>
+      <a href="/pages/clientes.html"><span class="icon">▪</span> Clientes</a>
+      <a href="/pages/produtos.html"><span class="icon">▪</span> Produtos</a>
+      <a href="/pages/pedidos.html"><span class="icon">▪</span> Pedidos</a>
+      <a href="/pages/usuarios.html" class="active"><span class="icon">▪</span> Usuários</a>
+    </nav>
+    <div class="sidebar-footer">
+      <span id="nomeUsuario"></span>
+      <button class="btn btn-secondary btn-sm" onclick="logout()">Sair</button>
+    </div>
+  </aside>
+  <div class="main-content">
+    <div class="topbar"><h1>Usuários</h1></div>
+    <div class="page-body">
+      <div id="alerta" class="alert hidden"></div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Usuários do Sistema</h2>
+          <button class="btn btn-primary" onclick="abrirModal()">+ Novo</button>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Nome</th><th>Email</th><th>Perfil</th><th>Ações</th></tr></thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="modal" class="modal-overlay hidden">
+  <div class="modal">
+    <h2 id="modalTitulo">Novo Usuário</h2>
+    <input type="hidden" id="usuarioId"/>
+    <div class="form-group"><label>Nome *</label><input id="nome" type="text" placeholder="Nome completo"/></div>
+    <div class="form-group"><label>Email *</label><input id="email" type="email" placeholder="email@exemplo.com"/></div>
+    <div class="form-group"><label>Senha <span id="senhaHint" style="font-weight:400;text-transform:none">(obrigatória)</span></label><input id="senha" type="password" placeholder="Mínimo 6 caracteres"/></div>
+    <div class="form-group">
+      <label>Perfil</label>
+      <select id="perfil">
+        <option value="funcionario">Funcionário</option>
+        <option value="admin">Admin</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="fecharModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvar()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/utils.js"></script>
+<script>
+  requireAuth();
+  document.getElementById('nomeUsuario').textContent = localStorage.getItem('nomeUsuario') || '';
+  let editandoId = null;
+
+  // Carrega usuarios via Axios - [Pedro Mota Batista]
+  async function carregar() {
+    const res = await axios.get(API + '/usuarios', { headers: getHeaders() });
+    document.getElementById('tbody').innerHTML = res.data.map(u => `
+      <tr>
+        <td>${u.nome}</td>
+        <td>${u.email}</td>
+        <td><span class="badge badge-${u.perfil}">${u.perfil}</span></td>
+        <td style="display:flex;gap:6px">
+          <button class="btn btn-secondary btn-sm" onclick="editar('${u.id}','${u.nome}','${u.email}','${u.perfil}')">Editar</button>
+          <button class="btn btn-danger btn-sm" onclick="remover('${u.id}')">Excluir</button>
+        </td>
+      </tr>`).join('');
+  }
+
+  function abrirModal() {
+    editandoId = null;
+    document.getElementById('modalTitulo').textContent = 'Novo Usuário';
+    document.getElementById('nome').value   = '';
+    document.getElementById('email').value  = '';
+    document.getElementById('senha').value  = '';
+    document.getElementById('perfil').value = 'funcionario';
+    document.getElementById('senhaHint').textContent = '(obrigatória)';
+    document.getElementById('modal').classList.remove('hidden');
+  }
+
+  function fecharModal() { document.getElementById('modal').classList.add('hidden'); }
+
+  function editar(id, nome, email, perfil) {
+    editandoId = id;
+    document.getElementById('modalTitulo').textContent = 'Editar Usuário';
+    document.getElementById('nome').value   = nome;
+    document.getElementById('email').value  = email;
+    document.getElementById('senha').value  = '';
+    document.getElementById('perfil').value = perfil;
+    document.getElementById('senhaHint').textContent = '(deixe em branco para manter)';
+    document.getElementById('modal').classList.remove('hidden');
+  }
+
+  // Cria ou atualiza usuario via Axios - [Pedro Mota Batista]
+  async function salvar() {
+    const body = {
+      nome:   document.getElementById('nome').value,
+      email:  document.getElementById('email').value,
+      perfil: document.getElementById('perfil').value,
+    };
+    const senha = document.getElementById('senha').value;
+    if (senha) body.senha = senha;
+    try {
+      if (editandoId) await axios.put(`${API}/usuarios/${editandoId}`, body, { headers: getHeaders() });
+      else await axios.post(API + '/usuarios', body, { headers: getHeaders() });
+      showAlert('Usuário salvo!'); fecharModal(); carregar();
+    } catch(e) { showAlert(e.response?.data?.erro || 'Erro ao salvar', 'erro'); }
+  }
+
+  // Remove usuario via Axios - [Pedro Mota Batista]
+  async function remover(id) {
+    if (!confirm('Remover este usuário?')) return;
+    await axios.delete(`${API}/usuarios/${id}`, { headers: getHeaders() });
+    showAlert('Usuário removido!'); carregar();
+  }
+
+  carregar();
+</script>
+</body>
+</html>

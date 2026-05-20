@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<!-- Gerenciamento de Produtos - [Pedro Mota Batista] -->
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Produtos - PIZZA ADMIN</title>
+  <link rel="stylesheet" href="/css/style.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.0/axios.min.js"></script>
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo"><h2>🍕 PIZZA ADMIN</h2><span>painel de gestão</span></div>
+    <nav>
+      <a href="/pages/dashboard.html"><span class="icon">▪</span> Dashboard</a>
+      <a href="/pages/clientes.html"><span class="icon">▪</span> Clientes</a>
+      <a href="/pages/produtos.html" class="active"><span class="icon">▪</span> Produtos</a>
+      <a href="/pages/pedidos.html"><span class="icon">▪</span> Pedidos</a>
+      <a href="/pages/usuarios.html"><span class="icon">▪</span> Usuários</a>
+    </nav>
+    <div class="sidebar-footer">
+      <span id="nomeUsuario"></span>
+      <button class="btn btn-secondary btn-sm" onclick="logout()">Sair</button>
+    </div>
+  </aside>
+  <div class="main-content">
+    <div class="topbar"><h1>Produtos</h1></div>
+    <div class="page-body">
+      <div id="alerta" class="alert hidden"></div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Cardápio</h2>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="filtroCategoria" onchange="carregar()" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:6px;font-size:13px">
+              <option value="">Todas</option>
+              <option value="pizza">Pizza</option>
+              <option value="bebida">Bebida</option>
+              <option value="sobremesa">Sobremesa</option>
+            </select>
+            <button class="btn btn-primary" onclick="abrirModal()">+ Novo</button>
+          </div>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Nome</th><th>Descrição</th><th>Preço</th><th>Categoria</th><th>Ações</th></tr></thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="modal" class="modal-overlay hidden">
+  <div class="modal">
+    <h2 id="modalTitulo">Novo Produto</h2>
+    <div class="form-group"><label>Nome *</label><input id="nome" type="text" placeholder="Ex: Pizza Margherita"/></div>
+    <div class="form-group"><label>Descrição</label><textarea id="descricao" rows="2" placeholder="Descreva o produto..."></textarea></div>
+    <div class="form-row">
+      <div class="form-group"><label>Preço (R$) *</label><input id="preco" type="number" step="0.01" min="0" placeholder="0.00"/></div>
+      <div class="form-group">
+        <label>Categoria *</label>
+        <select id="categoria">
+          <option value="">Selecione...</option>
+          <option value="pizza">Pizza</option>
+          <option value="bebida">Bebida</option>
+          <option value="sobremesa">Sobremesa</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="fecharModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvar()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/utils.js"></script>
+<script>
+  requireAuth();
+  document.getElementById('nomeUsuario').textContent = localStorage.getItem('nomeUsuario') || '';
+  let editandoId = null;
+
+  // Carrega produtos com filtro via Axios - [Pedro Mota Batista]
+  async function carregar() {
+    const cat = document.getElementById('filtroCategoria').value;
+    const url = cat ? `${API}/produtos?categoria=${cat}` : `${API}/produtos`;
+    const res = await axios.get(url, { headers: getHeaders() });
+    const lista = res.data;
+    const tbody = document.getElementById('tbody');
+    if (!lista.length) {
+      tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">🍕</div>Nenhum produto cadastrado</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = lista.map(p => `
+      <tr>
+        <td>${p.nome}</td>
+        <td>${p.descricao || '-'}</td>
+        <td>${formatMoeda(p.preco)}</td>
+        <td><span class="badge badge-${p.categoria}">${p.categoria}</span></td>
+        <td style="display:flex;gap:6px">
+          <button class="btn btn-secondary btn-sm" onclick="editar('${p.id}')">Editar</button>
+          <button class="btn btn-danger btn-sm" onclick="remover('${p.id}')">Excluir</button>
+        </td>
+      </tr>`).join('');
+  }
+
+  function abrirModal(p = null) {
+    editandoId = p?.id || null;
+    document.getElementById('modalTitulo').textContent = p ? 'Editar Produto' : 'Novo Produto';
+    document.getElementById('nome').value      = p?.nome || '';
+    document.getElementById('descricao').value = p?.descricao || '';
+    document.getElementById('preco').value     = p?.preco || '';
+    document.getElementById('categoria').value = p?.categoria || '';
+    document.getElementById('modal').classList.remove('hidden');
+  }
+
+  function fecharModal() { document.getElementById('modal').classList.add('hidden'); }
+
+  async function editar(id) {
+    const res = await axios.get(`${API}/produtos/${id}`, { headers: getHeaders() });
+    abrirModal(res.data);
+  }
+
+  // Cria ou atualiza produto via Axios - [Pedro Mota Batista]
+  async function salvar() {
+    const body = {
+      nome: document.getElementById('nome').value,
+      descricao: document.getElementById('descricao').value,
+      preco: document.getElementById('preco').value,
+      categoria: document.getElementById('categoria').value,
+    };
+    try {
+      if (editandoId) await axios.put(`${API}/produtos/${editandoId}`, body, { headers: getHeaders() });
+      else await axios.post(`${API}/produtos`, body, { headers: getHeaders() });
+      showAlert('Produto salvo!'); fecharModal(); carregar();
+    } catch(e) { showAlert(e.response?.data?.erro || 'Erro ao salvar', 'erro'); }
+  }
+
+  async function remover(id) {
+    if (!confirm('Remover este produto?')) return;
+    await axios.delete(`${API}/produtos/${id}`, { headers: getHeaders() });
+    showAlert('Produto removido!'); carregar();
+  }
+
+  carregar();
+</script>
+</body>
+</html>

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<!-- Gerenciamento de Clientes com ViaCEP e IBGE - [Pedro Mota Batista] -->
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Clientes - PIZZA ADMIN</title>
+  <link rel="stylesheet" href="/css/style.css"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.6.0/axios.min.js"></script>
+</head>
+<body>
+<div class="app-layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo"><h2>🍕 PIZZA ADMIN</h2><span>painel de gestão</span></div>
+    <nav>
+      <a href="/pages/dashboard.html"><span class="icon">▪</span> Dashboard</a>
+      <a href="/pages/clientes.html" class="active"><span class="icon">▪</span> Clientes</a>
+      <a href="/pages/produtos.html"><span class="icon">▪</span> Produtos</a>
+      <a href="/pages/pedidos.html"><span class="icon">▪</span> Pedidos</a>
+      <a href="/pages/usuarios.html"><span class="icon">▪</span> Usuários</a>
+    </nav>
+    <div class="sidebar-footer">
+      <span id="nomeUsuario"></span>
+      <button class="btn btn-secondary btn-sm" onclick="logout()">Sair</button>
+    </div>
+  </aside>
+  <div class="main-content">
+    <div class="topbar"><h1>Clientes</h1></div>
+    <div class="page-body">
+      <div id="alerta" class="alert hidden"></div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Cadastro de Clientes</h2>
+          <button class="btn btn-primary" onclick="abrirModal()">+ Novo</button>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead><tr><th>Nome</th><th>Telefone</th><th>CEP</th><th>Cidade / UF</th><th>Ações</th></tr></thead>
+            <tbody id="tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="modal" class="modal-overlay hidden">
+  <div class="modal">
+    <h2 id="modalTitulo">Novo Cliente</h2>
+    <input type="hidden" id="clienteId"/>
+    <div class="form-group"><label>Nome *</label><input id="nome" type="text" placeholder="Nome completo"/></div>
+    <div class="form-group"><label>Telefone *</label><input id="telefone" type="text" placeholder="(81) 99999-9999"/></div>
+    <div class="form-row">
+      <div class="form-group"><label>CEP *</label><input id="cep" type="text" placeholder="00000-000" onblur="preencherCEP()"/></div>
+      <div class="form-group"><label>Número</label><input id="numero" type="text" placeholder="123"/></div>
+    </div>
+    <div class="form-group"><label>Logradouro</label><input id="logradouro" type="text" placeholder="Preenchido pelo CEP"/></div>
+    <div class="form-row">
+      <div class="form-group"><label>Bairro</label><input id="bairro" type="text"/></div>
+      <div class="form-group">
+        <label>Estado (UF)</label>
+        <select id="estado" onchange="carregarMunicipios()">
+          <option value="">Selecione...</option>
+          <option>AC</option><option>AL</option><option>AP</option><option>AM</option>
+          <option>BA</option><option>CE</option><option>DF</option><option>ES</option>
+          <option>GO</option><option>MA</option><option>MT</option><option>MS</option>
+          <option>MG</option><option>PA</option><option>PB</option><option>PR</option>
+          <option>PE</option><option>PI</option><option>RJ</option><option>RN</option>
+          <option>RS</option><option>RO</option><option>RR</option><option>SC</option>
+          <option>SP</option><option>SE</option><option>TO</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Cidade</label>
+      <select id="cidade"><option value="">Selecione o estado primeiro</option></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="fecharModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvar()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/utils.js"></script>
+<script>
+  requireAuth();
+  document.getElementById('nomeUsuario').textContent = localStorage.getItem('nomeUsuario') || '';
+  let editandoId = null;
+
+  // Carrega lista de clientes via Axios - [Pedro Mota Batista]
+  async function carregar() {
+    const res = await axios.get(API + '/clientes', { headers: getHeaders() });
+    const lista = res.data;
+    const tbody = document.getElementById('tbody');
+    if (!lista.length) {
+      tbody.innerHTML = '<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">👥</div>Nenhum cliente ainda</div></td></tr>';
+      return;
+    }
+    tbody.innerHTML = lista.map(c => `
+      <tr>
+        <td>${c.nome}</td>
+        <td>${c.telefone}</td>
+        <td>${c.endereco?.cep || '-'}</td>
+        <td>${c.endereco?.cidade || '-'} / ${c.endereco?.estado || '-'}</td>
+        <td style="display:flex;gap:6px">
+          <button class="btn btn-secondary btn-sm" onclick="editar('${c.id}')">Editar</button>
+          <button class="btn btn-danger btn-sm" onclick="remover('${c.id}')">Excluir</button>
+        </td>
+      </tr>`).join('');
+  }
+
+  // Preenche endereco automaticamente via ViaCEP - [Pedro Mota Batista]
+  async function preencherCEP() {
+    const dados = await buscarCEP(document.getElementById('cep').value);
+    if (!dados) return;
+    document.getElementById('logradouro').value = dados.logradouro || '';
+    document.getElementById('bairro').value     = dados.bairro || '';
+    document.getElementById('estado').value     = dados.uf || '';
+    await carregarMunicipios(dados.localidade);
+  }
+
+  // Carrega municipios do estado via IBGE - [Pedro Mota Batista]
+  async function carregarMunicipios(cidadeAtual = '') {
+    const uf = document.getElementById('estado').value;
+    if (!uf) return;
+    const municipios = await buscarMunicipios(uf);
+    document.getElementById('cidade').innerHTML = municipios.map(m =>
+      `<option value="${m.nome}" ${m.nome === cidadeAtual ? 'selected' : ''}>${m.nome}</option>`
+    ).join('');
+  }
+
+  function abrirModal(c = null) {
+    editandoId = c?.id || null;
+    document.getElementById('modalTitulo').textContent = c ? 'Editar Cliente' : 'Novo Cliente';
+    document.getElementById('nome').value       = c?.nome || '';
+    document.getElementById('telefone').value   = c?.telefone || '';
+    document.getElementById('cep').value        = c?.endereco?.cep || '';
+    document.getElementById('numero').value     = c?.endereco?.numero || '';
+    document.getElementById('logradouro').value = c?.endereco?.logradouro || '';
+    document.getElementById('bairro').value     = c?.endereco?.bairro || '';
+    document.getElementById('estado').value     = c?.endereco?.estado || '';
+    document.getElementById('modal').classList.remove('hidden');
+  }
+
+  function fecharModal() { document.getElementById('modal').classList.add('hidden'); }
+
+  async function editar(id) {
+    const res = await axios.get(`${API}/clientes/${id}`, { headers: getHeaders() });
+    abrirModal(res.data);
+    if (res.data.endereco?.estado) await carregarMunicipios(res.data.endereco?.cidade);
+  }
+
+  // Salva cliente via Axios (POST ou PUT) - [Pedro Mota Batista]
+  async function salvar() {
+    const body = {
+      nome: document.getElementById('nome').value,
+      telefone: document.getElementById('telefone').value,
+      cep: document.getElementById('cep').value,
+      numero: document.getElementById('numero').value,
+      logradouro: document.getElementById('logradouro').value,
+      bairro: document.getElementById('bairro').value,
+      estado: document.getElementById('estado').value,
+      cidade: document.getElementById('cidade').value,
+    };
+    try {
+      if (editandoId) await axios.put(`${API}/clientes/${editandoId}`, body, { headers: getHeaders() });
+      else await axios.post(`${API}/clientes`, body, { headers: getHeaders() });
+      showAlert('Cliente salvo!'); fecharModal(); carregar();
+    } catch(e) { showAlert(e.response?.data?.erro || 'Erro ao salvar', 'erro'); }
+  }
+
+  // Remove cliente via Axios - [Pedro Mota Batista]
+  async function remover(id) {
+    if (!confirm('Remover este cliente?')) return;
+    await axios.delete(`${API}/clientes/${id}`, { headers: getHeaders() });
+    showAlert('Cliente removido!'); carregar();
+  }
+
+  carregar();
+</script>
+</body>
+</html>
